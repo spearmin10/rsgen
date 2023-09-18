@@ -1,0 +1,2 @@
+python rsgsvr.py
+pause
