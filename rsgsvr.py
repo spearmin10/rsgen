@@ -1,4 +1,5 @@
 import argparse
+import locale
 import socket
 import select
 import struct
@@ -201,6 +202,12 @@ class ManagementSessionHandler(StreamRequestHandler):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as ss:
                 try:
                     ss.bind(('', sess_port))
+                except Exception as e:
+                    msg = f'Unable to bind the port {sess_port}'
+                    self.__sess.write_all(self.__build_ng_bind_response(msg))
+                    raise RuntimeError(f'{msg} - {str(e)}')
+
+                try:
                     ss.listen(1)
                     self.__sess.write_all(self.__build_ok_bind_response(sess_port))
                 except Exception as e:
@@ -248,6 +255,12 @@ class ManagementSessionHandler(StreamRequestHandler):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             try:
                 s.bind(('', sess_port))
+            except Exception as e:
+                msg = f'Unable to bind the port {sess_port}'
+                self.__sess.write_all(self.__build_ng_bind_response(msg))
+                raise RuntimeError(f'{msg} - {str(e)}')
+
+            try:
                 self.__sess.write_all(self.__build_ok_bind_response(sess_port))
             except Exception as e:
                 self.__sess.write_all(self.__build_ng_bind_response(str(e)))
@@ -317,6 +330,8 @@ def main(
     Main
     """
     args = parse_args()
+
+    locale.setlocale(locale.LC_ALL, 'C')
 
     # Run the server
     ThreadingTCPServer.allow_reuse_address = True
