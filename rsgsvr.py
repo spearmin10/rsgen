@@ -121,6 +121,62 @@ class SocketIO(socket.socket):
         return self.__sock in r
 
 
+class ServerSockets:
+    def __init__(
+        self
+    ) -> None:
+        self.__mutex = threading.Lock()
+        self.__tcp_sockets: Dict[int, socket.socket] = {}
+        self.__udp_sockets: Dict[int, socket.socket] = {}
+
+    def __del__(
+        self
+    ) -> None:
+        for s in self.__tcp_sockets.values():
+            s.close()
+        for s in self.__udp_sockets.values():
+            s.close()
+
+    def bind_tcp_socket(
+        self,
+        port: int
+    ) -> socket.socket:
+        with self.__mutex:
+            s = self.__tcp_sockets.get(port)
+            if s is not None:
+                return s
+
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.bind(('', port))
+            except Exception as e:
+                s.close()
+                raise
+
+            s.listen(5)
+            self.__tcp_sockets[port] = s
+            return s
+
+    def bind_udp_socket(
+        self,
+        port: int
+    ) -> socket.socket:
+        with self.__mutex:
+            s = self.__udp_sockets.get(port)
+            if s is not None:
+                return s
+
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.bind(('', port))
+            except Exception as e:
+                s.close()
+                raise
+
+            self.__udp_sockets[port] = s
+            return s
+
+
 class ManagementSessionHandler(StreamRequestHandler):
     """
     The management session handler
@@ -141,7 +197,6 @@ class ManagementSessionHandler(StreamRequestHandler):
         client_address,
         server
     ) -> None:
-        self.__mutex = threading.Lock()
         self.__sess: SocketIO | None = None
         self.__timeout_udp_server = 3
         self.__timeout_tcp_accept = 3
@@ -198,27 +253,19 @@ class ManagementSessionHandler(StreamRequestHandler):
         self,
         sess_port: int
     ) -> None:
-        with self.__mutex:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as ss:
-                try:
-                    ss.bind(('', sess_port))
-                except Exception as e:
-                    msg = f'Unable to bind the port {sess_port}'
-                    self.__sess.write_all(self.__build_ng_bind_response(msg))
-                    raise RuntimeError(f'{msg} - {str(e)}')
+        try:
+            ss = self.__server_sockets.bind_tcp_socket(sess_port)
+            self.__sess.write_all(self.__build_ok_bind_response(sess_port))
+        except Exception as e:
+            msg = f'Unable to bind the port {sess_port}'
+            self.__sess.write_all(self.__build_ng_bind_response(msg))
+            raise RuntimeError(f'{msg} - {str(e)}')
 
-                try:
-                    ss.listen(1)
-                    self.__sess.write_all(self.__build_ok_bind_response(sess_port))
-                except Exception as e:
-                    self.__sess.write_all(self.__build_ng_bind_response(str(e)))
-                    raise
-
-                r, _, _ = select.select([ss], [], [], self.__timeout_tcp_accept)
-                if ss not in r:
-                    raise RuntimeError('timed out - accept')
-                
-                cs, _ = ss.accept()
+        r, _, _ = select.select([ss], [], [], self.__timeout_tcp_accept)
+        if ss not in r:
+            raise RuntimeError('timed out - accept')
+        
+        cs, _ = ss.accept()
         
         with cs:
             ms = self.__sess.socket
@@ -252,41 +299,41 @@ class ManagementSessionHandler(StreamRequestHandler):
         self,
         sess_port: int
     ) -> None:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            try:
-                s.bind(('', sess_port))
-            except Exception as e:
-                msg = f'Unable to bind the port {sess_port}'
-                self.__sess.write_all(self.__build_ng_bind_response(msg))
-                raise RuntimeError(f'{msg} - {str(e)}')
+        try:
+            ss = self.__server_sockets.bind_udp_socket(sess_port)
+            self.__sess.write_all(self.__build_ok_bind_response(sess_port))
+        except Exception as e:
+            msg = f'Unable to bind the port {sess_port}'
+            self.__sess.write_all(self.__build_ng_bind_response(msg))
+            raise RuntimeError(f'{msg} - {str(e)}')
 
-            try:
-                self.__sess.write_all(self.__build_ok_bind_response(sess_port))
-            except Exception as e:
-                self.__sess.write_all(self.__build_ng_bind_response(str(e)))
-                raise
+        ms = SocketIO(self.__sess.socket, self.__timeout_udp_session)
+        peer = None
+        while True:
+            if not ms.wait_for_read():
+                raise RuntimeError('timed out - read')
+            
+            if len(ms.socket.recv(1, socket.MSG_PEEK)) == 0:
+                break
+            
+            rwtype, = ms.read_struct('!B')
+            if rwtype == 1:
+                wlen, = ms.read_struct('!I')
+                _, peer = ss.recvfrom(wlen)
+            elif rwtype == 2:
+                peer_ip = ms.read_payload().decode()
+                peer_port, = ms.read_struct('!H')
+                if peer is None:
+                    peer = peer_ip, peer_port
+                ss.sendto(ms.read_payload(), peer)
+            else:
+                raise RuntimeError(f'Invalid R/W type - {rwtype}')
 
-            ms = SocketIO(self.__sess.socket, self.__timeout_udp_session)
-            peer = None
-            while True:
-                if not ms.wait_for_read():
-                    raise RuntimeError('timed out - read')
-                
-                if len(ms.socket.recv(1, socket.MSG_PEEK)) == 0:
-                    break
-                
-                rwtype, = ms.read_struct('!B')
-                if rwtype == 1:
-                    wlen, = ms.read_struct('!I')
-                    _, peer = s.recvfrom(wlen)
-                elif rwtype == 2:
-                    peer_ip = ms.read_payload().decode()
-                    peer_port, = ms.read_struct('!H')
-                    if peer is None:
-                        peer = peer_ip, peer_port
-                    s.sendto(ms.read_payload(), peer)
-                else:
-                    raise RuntimeError(f'Invalid R/W type - {rwtype}')
+    def setup(
+        self
+    ) -> None:
+        self.__server_sockets = self.server.server_sockets
+        super().setup()
 
     def handle(
         self
@@ -336,6 +383,7 @@ def main(
     # Run the server
     ThreadingTCPServer.allow_reuse_address = True
     with ThreadingTCPServer(('', args.port), ManagementSessionHandler) as svr:
+        svr.server_sockets = ServerSockets()
         svr.serve_forever()
 
 
