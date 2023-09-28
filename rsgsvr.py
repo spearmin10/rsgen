@@ -202,6 +202,7 @@ class ManagementSessionHandler(StreamRequestHandler):
         self.__timeout_tcp_accept = 3
         self.__timeout_tcp_session = 30
         self.__timeout_udp_session = 3
+        self.__server_sockets = ServerSockets()
         super().__init__(request, client_address, server)
 
     def __build_ok_bind_response(
@@ -329,12 +330,6 @@ class ManagementSessionHandler(StreamRequestHandler):
             else:
                 raise RuntimeError(f'Invalid R/W type - {rwtype}')
 
-    def setup(
-        self
-    ) -> None:
-        self.__server_sockets = self.server.server_sockets
-        super().setup()
-
     def handle(
         self
     ) -> None:
@@ -383,7 +378,6 @@ def main(
     # Run the server
     ThreadingTCPServer.allow_reuse_address = True
     with ThreadingTCPServer(('', args.port), ManagementSessionHandler) as svr:
-        svr.server_sockets = ServerSockets()
         svr.serve_forever()
 
 
