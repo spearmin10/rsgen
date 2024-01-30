@@ -13,7 +13,7 @@ if !ERRORLEVEL! EQU 0 (
   set PYTHON=python
 )
 call :makesure_rsgsvr
-%PYTHON% rsgsvr.py
+!PYTHON! rsgsvr.py
 
 pause
 exit /b 0
@@ -28,7 +28,7 @@ if not exist rsgsvr.py (
 
   mkdir !RSGSVR_DIR! 2> NUL
   curl -Lo "!RSGSVR_SAVE_AS!" -H "Cache-Control: no-cache, no-store" "!RSGSVR_URL!" 2> NUL
-  pushd %RSGSVR_DIR%
+  pushd !RSGSVR_DIR!
 )
 exit /b 0
 
