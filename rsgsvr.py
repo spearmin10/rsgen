@@ -378,6 +378,7 @@ def main(
     # Run the server
     ThreadingTCPServer.allow_reuse_address = True
     with ThreadingTCPServer(('', args.port), ManagementSessionHandler) as svr:
+        print(f'The RSG server is running on port {args.port}.'
         svr.serve_forever()
 
 
