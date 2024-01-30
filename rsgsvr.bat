@@ -28,7 +28,7 @@ if not exist rsgsvr.py (
 
   mkdir !RSGSVR_DIR! 2> NUL
   curl -Lo "!RSGSVR_SAVE_AS!" -H "Cache-Control: no-cache, no-store" "!RSGSVR_URL!" 2> NUL
-  pushd %TEMP%
+  pushd %RSGSVR_DIR%
 )
 exit /b 0
 
