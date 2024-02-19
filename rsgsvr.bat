@@ -4,21 +4,15 @@ setlocal enabledelayedexpansion
 set RSGSVR_FILENAME=rsgsvr.py
 set RSGSVR_PATH=%~dp0\!RSGSVR_FILENAME!
 
-where python3 2>&1 > NUL
-if not errorlevel 1 (
-  python3 --version 2>&1 | findstr /C:"Python 3." > NUL
-)
-if not errorlevel 1 (
+cmd /C "python3 --version 2>&1" | findstr /C:"Python 3." > NUL
+if !ERRORLEVEL! EQU 0 (
   set PYTHON=python3
 ) else (
-  where python  2>&1 > NUL
-  if not errorlevel 1 (
-    python --version 2>&1 | findstr /C:"Python 3." > NUL
-  )
-  if not errorlevel 1 (
-    set PYTHON=python
-  ) else (
+  cmd /C "python --version 2>&1" | findstr /C:"Python 3." > NUL
+  if !ERRORLEVEL! NEQ 0 (
     call :deploy_python3
+  ) else (
+    set PYTHON=python
   )
 )
 call :makesure_rsgsvr
