@@ -256,8 +256,9 @@ class ManagementSessionHandler(StreamRequestHandler):
         self,
         sess_port: int
     ) -> None:
+        ms = self.__sess.socket
         try:
-            selfip, _ = self.__sess.getsockname()
+            selfip, _ = ms.getsockname()
             ss = self.__server_sockets.bind_tcp_socket(selfip, sess_port)
             self.__sess.write_all(self.__build_ok_bind_response(sess_port))
         except Exception as e:
@@ -270,9 +271,7 @@ class ManagementSessionHandler(StreamRequestHandler):
             raise RuntimeError('timed out - accept')
         
         cs, _ = ss.accept()
-        
         with cs:
-            ms = self.__sess.socket
             dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
             while True:
                 r, _, _ = select.select([cs, ms], [], [], self.__timeout_tcp_session)                
@@ -304,7 +303,7 @@ class ManagementSessionHandler(StreamRequestHandler):
         sess_port: int
     ) -> None:
         try:
-            selfip, _ = self.__sess.getsockname()
+            selfip, _ = self.__sess.socket.getsockname()
             ss = self.__server_sockets.bind_udp_socket(selfip, sess_port)
             self.__sess.write_all(self.__build_ok_bind_response(sess_port))
         except Exception as e:
