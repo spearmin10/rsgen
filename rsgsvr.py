@@ -160,7 +160,7 @@ class ServerSockets:
 
     def bind_udp_socket(
         self,
-        host: str | None
+        host: str | None,
         port: int
     ) -> socket.socket:
         with self.__mutex:
