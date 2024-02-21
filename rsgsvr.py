@@ -139,6 +139,7 @@ class ServerSockets:
 
     def bind_tcp_socket(
         self,
+        host: str | None,
         port: int
     ) -> socket.socket:
         with self.__mutex:
@@ -148,7 +149,7 @@ class ServerSockets:
 
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
-                s.bind(('', port))
+                s.bind((host or '', port))
             except Exception as e:
                 s.close()
                 raise
@@ -159,6 +160,7 @@ class ServerSockets:
 
     def bind_udp_socket(
         self,
+        host: str | None
         port: int
     ) -> socket.socket:
         with self.__mutex:
@@ -168,7 +170,7 @@ class ServerSockets:
 
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
-                s.bind(('', port))
+                s.bind((host or '', port))
             except Exception as e:
                 s.close()
                 raise
@@ -255,7 +257,8 @@ class ManagementSessionHandler(StreamRequestHandler):
         sess_port: int
     ) -> None:
         try:
-            ss = self.__server_sockets.bind_tcp_socket(sess_port)
+            selfip, _ = self.__sess.getsockname()
+            ss = self.__server_sockets.bind_tcp_socket(selfip, sess_port)
             self.__sess.write_all(self.__build_ok_bind_response(sess_port))
         except Exception as e:
             msg = f'Unable to bind the port {sess_port}'
@@ -301,7 +304,8 @@ class ManagementSessionHandler(StreamRequestHandler):
         sess_port: int
     ) -> None:
         try:
-            ss = self.__server_sockets.bind_udp_socket(sess_port)
+            selfip, _ = self.__sess.getsockname()
+            ss = self.__server_sockets.bind_udp_socket(selfip, sess_port)
             self.__sess.write_all(self.__build_ok_bind_response(sess_port))
         except Exception as e:
             msg = f'Unable to bind the port {sess_port}'
