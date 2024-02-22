@@ -7,9 +7,10 @@ import enum
 import time
 import zlib
 import threading
+import ipaddress
 from asyncio import IncompleteReadError
 from socketserver import BaseRequestHandler, StreamRequestHandler, ThreadingTCPServer
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, Union
 
 
 class SocketIO(socket.socket):
@@ -126,8 +127,8 @@ class ServerSockets:
         self
     ) -> None:
         self.__mutex = threading.Lock()
-        self.__tcp_sockets: Dict[int, socket.socket] = {}
-        self.__udp_sockets: Dict[int, socket.socket] = {}
+        self.__tcp_sockets: Dict[Tuple[str, int], socket.socket] = {}
+        self.__udp_sockets: Dict[Tuple[str, int], socket.socket] = {}
 
     def __del__(
         self
@@ -139,43 +140,45 @@ class ServerSockets:
 
     def bind_tcp_socket(
         self,
-        host: Optional[str],
+        ip: Union[ipaddress.IPv4Address, ipaddress.IPv6Address],
         port: int
     ) -> socket.socket:
+        addr = (str(ip), port)
         with self.__mutex:
-            s = self.__tcp_sockets.get(port)
+            s = self.__tcp_sockets.get(addr)
             if s is not None:
                 return s
 
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
-                s.bind((host or '', port))
+                s.bind(addr)
             except Exception as e:
                 s.close()
                 raise
 
             s.listen(5)
-            self.__tcp_sockets[port] = s
+            self.__tcp_sockets[addr] = s
             return s
 
     def bind_udp_socket(
         self,
-        host: Optional[str],
+        ip: Union[ipaddress.IPv4Address, ipaddress.IPv6Address],
         port: int
     ) -> socket.socket:
+        addr = (str(ip), port)
         with self.__mutex:
-            s = self.__udp_sockets.get(port)
+            s = self.__udp_sockets.get(addr)
             if s is not None:
                 return s
 
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
-                s.bind((host or '', port))
+                s.bind(addr)
             except Exception as e:
                 s.close()
                 raise
 
-            self.__udp_sockets[port] = s
+            self.__udp_sockets[addr] = s
             return s
 
 
@@ -267,7 +270,10 @@ class ManagementSessionHandler(StreamRequestHandler):
         ms = self.__sess.socket
         try:
             selfip, _ = ms.getsockname()
-            ss = self.__server_sockets.bind_tcp_socket(selfip, sess_port)
+            ss = self.__server_sockets.bind_tcp_socket(
+                ipaddress.ip_address(selfip),
+                sess_port
+            )
             self.__sess.write_all(self.__build_ok_bind_response(sess_port))
         except Exception as e:
             msg = f'Unable to bind the port {sess_port}'
@@ -312,7 +318,10 @@ class ManagementSessionHandler(StreamRequestHandler):
     ) -> None:
         try:
             selfip, _ = self.__sess.socket.getsockname()
-            ss = self.__server_sockets.bind_udp_socket(selfip, sess_port)
+            ss = self.__server_sockets.bind_udp_socket(
+                ipaddress.ip_address(selfip),
+                sess_port
+            )
             self.__sess.write_all(self.__build_ok_bind_response(sess_port))
         except Exception as e:
             msg = f'Unable to bind the port {sess_port}'
