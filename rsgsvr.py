@@ -204,8 +204,16 @@ class ManagementSessionHandler(StreamRequestHandler):
         self.__timeout_tcp_accept = 3
         self.__timeout_tcp_session = 30
         self.__timeout_udp_session = 3
-        self.__server_sockets = ServerSockets()
+        self.__server_sockets = None
         super().__init__(request, client_address, server)
+
+
+    def setup(
+        self
+    ) -> None:
+        self.__server_sockets = self.server.server_sockets
+        super().setup()
+
 
     def __build_ok_bind_response(
         self,
@@ -380,6 +388,7 @@ def main(
 
     # Run the server
     ThreadingTCPServer.allow_reuse_address = True
+    ThreadingTCPServer.server_sockets = ServerSockets()
     with ThreadingTCPServer(('', args.port), ManagementSessionHandler) as svr:
         print(f'The RSG server is running on port {args.port}.')
         svr.serve_forever()
