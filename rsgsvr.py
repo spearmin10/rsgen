@@ -139,7 +139,7 @@ class ServerSockets:
 
     def bind_tcp_socket(
         self,
-        host: str | None,
+        host: Optional[str],
         port: int
     ) -> socket.socket:
         with self.__mutex:
@@ -160,7 +160,7 @@ class ServerSockets:
 
     def bind_udp_socket(
         self,
-        host: str | None,
+        host: Optional[str],
         port: int
     ) -> socket.socket:
         with self.__mutex:
@@ -199,7 +199,7 @@ class ManagementSessionHandler(StreamRequestHandler):
         client_address,
         server
     ) -> None:
-        self.__sess: SocketIO | None = None
+        self.__sess: Optional[SocketIO] = None
         self.__timeout_udp_server = 3
         self.__timeout_tcp_accept = 3
         self.__timeout_tcp_session = 30
