@@ -267,9 +267,8 @@ class ManagementSessionHandler(StreamRequestHandler):
         self,
         sess_port: int
     ) -> None:
-        ms = self.__sess.socket
         try:
-            selfip, _ = ms.getsockname()
+            selfip, _ = self.__sess.socket.getsockname()
             ss = self.__server_sockets.bind_tcp_socket(
                 ipaddress.ip_address(selfip),
                 sess_port
@@ -284,34 +283,50 @@ class ManagementSessionHandler(StreamRequestHandler):
         if ss not in r:
             raise RuntimeError('timed out - accept')
         
+        ms = SocketIO(self.__sess.socket, self.__timeout_tcp_session)
         cs, _ = ss.accept()
         with cs:
-            dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            dec = None
             while True:
-                r, _, _ = select.select([cs, ms], [], [], self.__timeout_tcp_session)                
-                if not r:
-                    raise RuntimeError('timed out - tcp read')
-
-                if ms in r:
-                    comp_data = ms.recv(4096)
-                    if len(comp_data) == 0:
+                if not ms.wait_for_read():
+                    raise RuntimeError('timed out - read')
+                
+                rwtype, = ms.read_struct('!B')
+                if rwtype == 0:
+                    if dec is not None:
                         plain = dec.flush()
+                        if len(plain) != 0:
+                            SocketIO(cs, self.__timeout_tcp_session).write_all(plain)
+                    break
+                elif rwtype == 1:
+                    wlen, = ms.read_struct('!I')
+                    while wlen > 0:
+                        rlen = len(cs.recv(wlen))
+                        if rlen == 0:
+                            raise RuntimeError('Disconnected - tcp read')
+                        wlen -= rlen
+                
+                elif rwtype == 2:
+                    comp_data = ms.read_payload()
+                    if len(comp_data) == 0:
+                        if dec is None:
+                            plain = b''
+                        else:
+                            plain = dec.flush()
                     else:
+                        if dec is None:
+                            dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
                         plain = dec.decompress(comp_data)
                     
                     if len(plain) != 0:
                         SocketIO(cs, self.__timeout_tcp_session).write_all(plain)
                     
-                    if len(comp_data) == 0:
-                        break
-                    
                     if dec.eof:
-                        dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
-                
-                if cs in r:
-                    cs.recv(4096)
-                
-    
+                        dec = None
+
+                else:
+                    raise RuntimeError(f'Invalid R/W type - {rwtype}')
+
     def __handle_udp(
         self,
         sess_port: int
@@ -338,7 +353,9 @@ class ManagementSessionHandler(StreamRequestHandler):
                 break
             
             rwtype, = ms.read_struct('!B')
-            if rwtype == 1:
+            if rwtype == 0:
+                return
+            elif rwtype == 1:
                 wlen, = ms.read_struct('!I')
                 _, peer = ss.recvfrom(wlen)
             elif rwtype == 2:
@@ -353,22 +370,30 @@ class ManagementSessionHandler(StreamRequestHandler):
     def handle(
         self
     ) -> None:
-        # bind request
-        self.__sess = SocketIO(self.request, self.__timeout_tcp_session)
-        
-        protocol_version, sess_protocol, sess_port = self.__sess.read_struct('!BBH')
-        if protocol_version != 0:
-            self.__sess.write_all(
-                self.__build_ng_bind_response(f'Unsupported protocol version: {protocol_version}')
-            )
-        elif sess_protocol == self.SessionProtocol.TCP:
-            self.__handle_tcp(sess_port)
-        elif sess_protocol == self.SessionProtocol.UDP:
-            self.__handle_udp(sess_port)
-        else:
-            self.__sess.write_all(
-                self.__reply_ng_bind_response(f'Invalid protocol: {sess_protocol}')
-            )
+        while True:
+            r, _, _ = select.select([self.request], [], [])
+            if self.request not in r:
+                continue
+            
+            if len(self.request.recv(1, socket.MSG_PEEK)) == 0:
+                break
+            
+            # bind request
+            self.__sess = SocketIO(self.request, self.__timeout_tcp_session)
+            
+            protocol_version, sess_protocol, sess_port = self.__sess.read_struct('!BBH')
+            if protocol_version != 1:
+                self.__sess.write_all(
+                    self.__build_ng_bind_response(f'Unsupported protocol version: {protocol_version}')
+                )
+            elif sess_protocol == self.SessionProtocol.TCP:
+                self.__handle_tcp(sess_port)
+            elif sess_protocol == self.SessionProtocol.UDP:
+                self.__handle_udp(sess_port)
+            else:
+                self.__sess.write_all(
+                    self.__reply_ng_bind_response(f'Invalid protocol: {sess_protocol}')
+                )
 
 
 def parse_args(
