@@ -374,8 +374,10 @@ class ManagementSessionHandler(StreamRequestHandler):
             r, _, _ = select.select([self.request], [], [])
             if self.request not in r:
                 continue
-            
-            if len(self.request.recv(1, socket.MSG_PEEK)) == 0:
+            try:
+                if len(self.request.recv(1, socket.MSG_PEEK)) == 0:
+                    break
+            except ConnectionResetError:
                 break
             
             # bind request
