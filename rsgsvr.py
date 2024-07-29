@@ -59,7 +59,7 @@ class SocketIO(socket.socket):
 
             n = s.recv_into(view[pos:])
             if not n:
-                raise IncompleteReadError(f'Incomplete read data: {pos}/{size}')
+                raise IncompleteReadError(buf, size)
             pos += n
         return bytes(buf)
     
